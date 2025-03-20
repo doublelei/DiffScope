@@ -12,7 +12,7 @@ def test_analyze_commit_full_workflow(print_commit_result):
         pytest.skip("Skipping test due to missing GITHUB_TOKEN")
         
     # Use a well-known commit URL
-    commit_url = "https://github.com/python/cpython/commit/6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+    commit_url = "https://github.com/python/cpython/commit/d783d7b51d31db568de6b3438f4e805acff663da"
     
     try:
         # Analyze the commit using the main library function
@@ -23,7 +23,7 @@ def test_analyze_commit_full_workflow(print_commit_result):
         
         # Verify the result structure
         assert isinstance(result, CommitAnalysisResult)
-        assert result.commit_sha == "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+        assert result.commit_sha == "d783d7b51d31db568de6b3438f4e805acff663da"
         assert result.commit_author is not None
         assert result.commit_date is not None
         assert result.commit_message is not None

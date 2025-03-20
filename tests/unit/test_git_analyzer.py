@@ -94,14 +94,14 @@ class TestGitAnalyzer:
         Note: This test hits the live GitHub API.
         """
         # Use a well-known commit URL
-        commit_url = "https://github.com/python/cpython/commit/6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+        commit_url = "https://github.com/python/cpython/commit/d783d7b51d31db568de6b3438f4e805acff663da"
         
         # Analyze the commit
         result = analyze_github_commit(commit_url)
         
         # Verify result structure
         assert isinstance(result, CommitAnalysisResult)
-        assert result.commit_sha == "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+        assert result.commit_sha == "d783d7b51d31db568de6b3438f4e805acff663da"
         assert result.repository_url == "https://github.com/python/cpython"
         assert len(result.modified_files) > 0
         

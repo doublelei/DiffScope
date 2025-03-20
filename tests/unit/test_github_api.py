@@ -8,19 +8,19 @@ class TestGitHubAPI:
         """Test parsing a valid GitHub commit URL."""
         # Test standard GitHub URL
         owner, repo, commit_sha = parse_github_url(
-            "https://github.com/python/cpython/commit/6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+            "https://github.com/python/cpython/commit/d783d7b51d31db568de6b3438f4e805acff663da"
         )
         assert owner == "python"
         assert repo == "cpython"
-        assert commit_sha == "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+        assert commit_sha == "d783d7b51d31db568de6b3438f4e805acff663da"
         
         # Test HTTP URL (not HTTPS)
         owner, repo, commit_sha = parse_github_url(
-            "http://github.com/python/cpython/commit/6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+            "http://github.com/python/cpython/commit/d783d7b51d31db568de6b3438f4e805acff663da"
         )
         assert owner == "python"
         assert repo == "cpython"
-        assert commit_sha == "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+        assert commit_sha == "d783d7b51d31db568de6b3438f4e805acff663da"
     
     def test_parse_github_url_invalid(self):
         """Test parsing invalid GitHub URLs."""
@@ -44,7 +44,7 @@ class TestGitHubAPI:
         """
         # Use a well-known commit from the Python repository
         commit_data = get_commit_data(
-            "python", "cpython", "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+            "python", "cpython", "d783d7b51d31db568de6b3438f4e805acff663da"
         )
         
         # Verify the basic structure of the response
@@ -54,7 +54,7 @@ class TestGitHubAPI:
         assert 'files' in commit_data
         
         # Verify some commit details
-        assert commit_data['sha'] == "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+        assert commit_data['sha'] == "d783d7b51d31db568de6b3438f4e805acff663da"
         assert 'message' in commit_data['commit']
     
     @pytest.mark.live_api
@@ -65,7 +65,7 @@ class TestGitHubAPI:
         """
         # Get content of README.md from Python repository at a specific commit
         content = get_file_content(
-            "python", "cpython", "README.rst", "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+            "python", "cpython", "README.rst", "d783d7b51d31db568de6b3438f4e805acff663da"
         )
         
         # Verify content is retrieved
@@ -75,6 +75,6 @@ class TestGitHubAPI:
         # Test with a non-existent file
         content = get_file_content(
             "python", "cpython", "this-file-does-not-exist.txt", 
-            "6c776abb90be09d2b9e53d9b06b56a2e7004b57c"
+            "d783d7b51d31db568de6b3438f4e805acff663da"
         )
         assert content is None 
