@@ -1,0 +1,40 @@
+{
+  "functions": [
+    {
+      "name": "outer_function",
+      "start_line": 7,
+      "end_line": 27,
+      "node_type": "function",
+      "contains_nested": true
+    },
+    {
+      "name": "inner_function1",
+      "start_line": 11,
+      "end_line": 15,
+      "node_type": "function",
+      "parent": "outer_function"
+    },
+    {
+      "name": "inner_function2",
+      "start_line": 17,
+      "end_line": 19,
+      "node_type": "function",
+      "parent": "outer_function"
+    },
+    {
+      "name": "method_with_inner",
+      "start_line": 31,
+      "end_line": 41,
+      "node_type": "method",
+      "parent": "TestClass",
+      "contains_nested": true
+    },
+    {
+      "name": "increment",
+      "start_line": 35,
+      "end_line": 39,
+      "node_type": "function",
+      "parent": "method_with_inner"
+    }
+  ]
+} 

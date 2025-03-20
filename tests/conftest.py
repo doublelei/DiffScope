@@ -1,5 +1,13 @@
+"""
+Test configuration for DiffScope.
+
+This file adds custom command-line options to pytest for testing
+file processing functionality against arbitrary inputs.
+"""
+
 import pytest
 import os
+import json
 
 def pytest_configure(config):
     """Configure pytest."""
@@ -9,12 +17,42 @@ def pytest_configure(config):
     )
 
 def pytest_addoption(parser):
-    """Add command-line options to pytest."""
+    """Add custom command-line options to pytest."""
     parser.addoption(
         "--run-live-api",
         action="store_true",
         default=False,
         help="Run tests that hit the live GitHub API",
+    )
+    parser.addoption(
+        "--input",
+        action="store",
+        default=None,
+        help="Path to input file for function parser testing"
+    )
+    parser.addoption(
+        "--expected-output",
+        action="store",
+        default=None,
+        help="Path to expected JSON output file (optional)"
+    )
+    parser.addoption(
+        "--language",
+        action="store",
+        default=None,
+        help="Language of the input file (e.g., python, javascript)"
+    )
+    parser.addoption(
+        "--line",
+        action="store",
+        default=None,
+        help="Line number to find function at"
+    )
+    parser.addoption(
+        "--output-file",
+        action="store",
+        default=None,
+        help="Path to save parser output as JSON"
     )
 
 def pytest_collection_modifyitems(config, items):
@@ -77,3 +115,81 @@ def print_commit_result():
         print("="*80 + "\n")
         
     return _print_commit_result 
+
+@pytest.fixture
+def input_file(request):
+    """Get the input file path from command line."""
+    return request.config.getoption("--input")
+
+@pytest.fixture
+def expected_output_file(request):
+    """Get the expected output file path from command line."""
+    return request.config.getoption("--expected-output")
+
+@pytest.fixture
+def language(request):
+    """Get the language from command line."""
+    return request.config.getoption("--language")
+
+@pytest.fixture
+def line_number(request):
+    """Get the line number from command line."""
+    line = request.config.getoption("--line")
+    if line is not None:
+        try:
+            return int(line)
+        except ValueError:
+            pytest.fail(f"Invalid line number: {line}")
+    return None
+
+@pytest.fixture
+def output_file(request):
+    """Get the output file path from command line."""
+    return request.config.getoption("--output-file")
+
+@pytest.fixture
+def input_content(input_file):
+    """Load content from the input file."""
+    if not input_file or not os.path.exists(input_file):
+        pytest.skip(f"Input file not specified or does not exist: {input_file}")
+    
+    with open(input_file, "r", encoding="utf-8") as f:
+        return f.read()
+
+@pytest.fixture
+def expected_output(expected_output_file):
+    """Load expected output from JSON file."""
+    if not expected_output_file:
+        return None
+        
+    if not os.path.exists(expected_output_file):
+        pytest.skip(f"Expected output file does not exist: {expected_output_file}")
+    
+    with open(expected_output_file, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+@pytest.fixture
+def detect_language(input_file, language):
+    """Auto-detect language if not specified."""
+    if language:
+        return language
+        
+    if input_file:
+        ext = os.path.splitext(input_file)[1].lower()
+        language_map = {
+            '.py': 'python',
+            '.js': 'javascript',
+            '.ts': 'typescript',
+            '.java': 'java',
+            '.c': 'c',
+            '.cpp': 'cpp',
+            '.h': 'c',
+            '.hpp': 'cpp',
+            '.go': 'go',
+            '.rb': 'ruby',
+            '.rs': 'rust',
+            # Add more mappings as needed
+        }
+        return language_map.get(ext)
+    
+    return None 
