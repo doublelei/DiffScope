@@ -180,7 +180,7 @@ def get_file_content(owner: str, repo: str, file_path: str, ref: str) -> Optiona
             return None
         raise ValueError(f"Failed to get file content for {file_path} at {ref}: {e}")
 
-def get_file_content_before_after(owner: str, repo: str, file_path: str, commit_sha: str) -> Tuple[Optional[str], Optional[str]]:
+def get_file_content_before_after(owner: str, repo: str, commit_sha: str, file_path: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Get the content of a file before and after a commit.
     

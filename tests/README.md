@@ -59,36 +59,41 @@ Show print statements (don't capture stdout/stderr):
 python -m pytest tests/ -v -s
 ```
 
-### GitHub API Tests
+### GitHub API Tests with Function Detection
 
-Some tests require GitHub API access, which may be subject to rate limits. These tests are marked with the `@pytest.mark.live_api` decorator and are skipped by default.
-
-To run tests that use the GitHub API:
+To run the integration tests that test both GitHub API and function detection:
 
 ```bash
-python -m pytest tests/ --run-live-api
+# Use the --run-live-api flag to enable real GitHub API access
+python -m pytest tests/integration/test_commit_analysis.py -v -s --run-live-api
 ```
 
-#### GitHub Authentication
+The integration tests will analyze real commits and detect function-level changes. This helps verify that:
 
-To avoid rate limits, set a GitHub token before running the tests:
+1. The GitHub API client works correctly
+2. Function detection works across different languages
+3. The two components integrate properly to produce accurate results
+
+### GitHub Authentication
+
+For running integration tests, you'll need a GitHub token to avoid rate limits:
 
 **Windows PowerShell**:
 ```powershell
 $env:GITHUB_TOKEN="your_github_token_here"
-python -m pytest tests/ --run-live-api
+python -m pytest tests/integration --run-live-api
 ```
 
 **Windows CMD**:
 ```cmd
 set GITHUB_TOKEN=your_github_token_here
-python -m pytest tests/ --run-live-api
+python -m pytest tests/integration --run-live-api
 ```
 
 **Linux/Mac**:
 ```bash
 export GITHUB_TOKEN=your_github_token_here
-python -m pytest tests/ --run-live-api
+python -m pytest tests/integration --run-live-api
 ```
 
 #### Skip Tests on Missing Token
@@ -98,11 +103,11 @@ To skip GitHub API tests entirely when no token is available:
 ```bash
 # Windows PowerShell
 $env:SKIP_ON_NO_TOKEN="true"
-python -m pytest tests/ --run-live-api
+python -m pytest tests/integration --run-live-api
 
 # Linux/Mac
 export SKIP_ON_NO_TOKEN=true
-python -m pytest tests/ --run-live-api
+python -m pytest tests/integration --run-live-api
 ```
 
 ## Test Output
@@ -113,7 +118,11 @@ Use the `-v` option for verbose output and `-s` to see print statements:
 python -m pytest tests/integration/test_commit_analysis.py -v -s --run-live-api
 ```
 
-The integration tests use the `print_commit_result` fixture to print detailed information about analysis results.
+The integration tests use the `print_commit_result` fixture to print detailed information about analysis results, including:
+- Commit metadata (SHA, author, date, message)
+- Modified files with their changes
+- Modified functions with their change types
+- Function diffs showing exactly what changed
 
 ## CLI Testing for Function Parser
 
@@ -212,14 +221,19 @@ def test_some_functionality():
 @pytest.mark.live_api
 def test_github_functionality():
     # This test will be skipped unless --run-live-api is specified
-    # Add RateLimitExceededException handling for robust GitHub API tests
+    # Add proper exception handling for robust GitHub API tests
     try:
         # Test code here
         pass
-    except RateLimitExceededException:
-        pytest.skip("GitHub API rate limit exceeded. Set GITHUB_TOKEN environment variable.")
+    except Exception as e:
+        if "API rate limit exceeded" in str(e):
+            pytest.skip("GitHub API rate limit exceeded. Set GITHUB_TOKEN environment variable.")
+        else:
+            raise
 ```
 
 ### Useful Fixtures
 
-- `print_commit_result`: Prints detailed information about a CommitAnalysisResult object 
+- `print_commit_result`: Prints detailed information about a CommitAnalysisResult object, including function changes
+- `mock_github_api`: Mock GitHub API to avoid actual network calls during unit testing
+- `input_file`, `language`, etc.: Fixtures for CLI-based testing 

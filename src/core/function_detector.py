@@ -9,7 +9,8 @@ from typing import List, Dict, Optional, Set, Tuple, Any, Union
 import logging
 import difflib
 from ..utils.diff_utils import (
-    parse_diff,
+    parse_github_patch,
+    extract_function_diff_from_patch,
     get_changed_line_numbers,
     map_original_to_new_line,
     map_new_to_original_line,
@@ -50,7 +51,7 @@ def create_modified_functions(
     new_content: Optional[str],
     language: str,
     file_path: str,
-    patch_or_file_diff: Optional[Union[str, FileDiff]] = None
+    patch: Optional[str] = None
 ) -> List[ModifiedFunction]:
     """
     Identify functions that were modified between two versions of a file.
@@ -60,7 +61,7 @@ def create_modified_functions(
         new_content: Content of the new file
         language: Programming language
         file_path: Path to the file
-        patch_or_file_diff: Optional unified diff patch (string) or FileDiff object
+        patch: Optional patch from GitHub API (starts with @@)
         
     Returns:
         List of ModifiedFunction objects
@@ -104,43 +105,38 @@ def create_modified_functions(
             for func in orig_functions
         ]
     
-    # Handle the patch or FileDiff argument
-    file_diff = None
+    # If we have the GitHub API patch, parse it directly
+    if patch and patch.startswith('@@'):
+        file_diff = parse_github_patch(patch, file_path)
+        if file_diff:
+            # Analyze the file diff
+            return analyze_file_diff(file_diff, original_content, new_content, language, file_path)
     
-    if isinstance(patch_or_file_diff, FileDiff):
-        # Already have a FileDiff object
-        file_diff = patch_or_file_diff
-    elif isinstance(patch_or_file_diff, str):
-        # Parse the patch string to get FileDiff objects
-        file_diffs = parse_diff(patch_or_file_diff)
-        if file_diffs:
-            file_diff = file_diffs[0]
-    
-    # If no patch/file_diff is provided but we have both contents, generate a diff
-    if not file_diff and original_content and new_content:
-        # Generate a unified diff
+    # If we don't have a patch but we have both contents, generate a diff
+    elif original_content and new_content:
+        # Generate a GitHub API style patch
         diff_lines = list(difflib.unified_diff(
             original_content.splitlines(),
             new_content.splitlines(),
-            fromfile='original',
-            tofile='modified',
+            # No fromfile/tofile - we don't need these headers
+            n=3,  # Context lines
             lineterm=''
         ))
-        patch = '\n'.join(diff_lines)
-        file_diffs = parse_diff(patch)
-        if file_diffs:
-            file_diff = file_diffs[0]
-    
-    if file_diff:
-        # Analyze the file diff
-        return analyze_file_diff(file_diff, original_content, new_content, language, file_path)
+        
+        # Skip the first two lines (--- and +++ headers)
+        if len(diff_lines) > 2:
+            generated_patch = '\n'.join(diff_lines[2:])
+            
+            # Parse with our GitHub patch parser
+            file_diff = parse_github_patch(generated_patch, file_path)
+            if file_diff:
+                return analyze_file_diff(file_diff, original_content, new_content, language, file_path)
     
     # If we get here, we couldn't analyze the changes
     logger.warning(f"Could not analyze changes for {file_path}")
     return []
 
 
-# Keeping the original function for backward compatibility
 def detect_modified_functions(
     original_content: str,
     new_content: str,
@@ -228,44 +224,20 @@ def detect_modified_functions(
         has_changes = any(orig_func['start_line'] <= line <= orig_func['end_line'] for line in orig_changed_lines)
         
         if has_changes:
-            # Try to find if it was renamed (check for similar functions in new version)
-            renamed_to = _find_renamed_function(orig_func, original_content, new_functions, new_content)
-            
-            if renamed_to:
-                # This function was renamed - update the ADDED function to RENAMED
-                for i, mf in enumerate(modified_functions):
-                    if (mf.change_type == FunctionChangeType.ADDED and 
-                        mf.new_start == renamed_to['start_line']):
-                        # Update to a renamed function
-                        modified_functions[i] = ModifiedFunction(
-                            name=renamed_to['name'],
-                            file=file_path,
-                            type=renamed_to['node_type'],
-                            change_type=FunctionChangeType.RENAMED,
-                            original_name=orig_func['name'],
-                            original_start=orig_func['start_line'],
-                            original_end=orig_func['end_line'],
-                            new_start=renamed_to['start_line'],
-                            new_end=renamed_to['end_line'],
-                            changes=modified_functions[i].changes,
-                            diff=modified_functions[i].diff
-                        )
-                        break
-            else:
-                # This function was deleted
-                modified_func = ModifiedFunction(
-                    name=orig_func['name'],
-                    file=file_path,
-                    type=orig_func['node_type'],
-                    change_type=FunctionChangeType.DELETED,
-                    original_start=orig_func['start_line'],
-                    original_end=orig_func['end_line'],
-                    new_start=None,
-                    new_end=None,
-                    changes=orig_func['end_line'] - orig_func['start_line'] + 1,  # All lines are removals
-                    diff=None
-                )
-                modified_functions.append(modified_func)
+            # This function was deleted
+            modified_func = ModifiedFunction(
+                name=orig_func['name'],
+                file=file_path,
+                type=orig_func['node_type'],
+                change_type=FunctionChangeType.DELETED,
+                original_start=orig_func['start_line'],
+                original_end=orig_func['end_line'],
+                new_start=None,
+                new_end=None,
+                changes=orig_func['end_line'] - orig_func['start_line'] + 1,  # All lines are removals
+                diff=None
+            )
+            modified_functions.append(modified_func)
     
     return modified_functions
 
@@ -275,7 +247,7 @@ def analyze_function_changes(
     after_func: Dict,
     before_content: str, 
     after_content: str,
-    patch_or_file_diff: Union[str, FileDiff, None] = None
+    patch: Optional[str] = None
 ) -> Dict:
     """
     Analyze what aspects of a function changed between versions.
@@ -285,7 +257,7 @@ def analyze_function_changes(
         after_func: Function information after changes
         before_content: File content before changes
         after_content: File content after changes
-        patch_or_file_diff: Unified diff of the file (string) or FileDiff object
+        patch: Optional patch from GitHub API
         
     Returns:
         Dictionary with change information
@@ -296,44 +268,40 @@ def analyze_function_changes(
     before_func_content = extract_function_content(before_content, before_func)
     after_func_content = extract_function_content(after_content, after_func)
     
-    # Handle the diff
+    # Handle the function diff
     func_diff = None
+    file_path = after_func.get('file_path', '') if isinstance(after_func, dict) else ''
     
-    if isinstance(patch_or_file_diff, FileDiff):
-        # Already have a FileDiff object
-        file_diff = patch_or_file_diff
-        if after_func:
-            func_diff = extract_function_diff(
-                file_diff, 
-                after_func['start_line'], 
-                after_func['end_line']
-            )
-    elif isinstance(patch_or_file_diff, str):
-        # Parse the patch string to get FileDiff objects
-        file_diffs = parse_diff(patch_or_file_diff)
-        if file_diffs and after_func:
-            func_diff = extract_function_diff(
-                file_diffs[0], 
-                after_func['start_line'], 
-                after_func['end_line']
-            )
-    elif patch_or_file_diff is None and before_content and after_content:
-        # Generate a diff if none provided
+    # Extract function diff from patch if we have it
+    if patch and patch.startswith('@@') and after_func:
+        func_diff = extract_function_diff_from_patch(
+            patch, 
+            file_path, 
+            after_func['start_line'], 
+            after_func['end_line']
+        )
+    # Otherwise generate a diff from the before/after content
+    elif before_content and after_content:
+        # Generate a unified diff (GitHub API style format)
         diff_lines = list(difflib.unified_diff(
             before_content.splitlines(),
             after_content.splitlines(),
-            fromfile='original',
-            tofile='modified',
+            n=3,  # Context lines
             lineterm=''
         ))
-        patch = '\n'.join(diff_lines)
-        file_diffs = parse_diff(patch)
-        if file_diffs and after_func:
-            func_diff = extract_function_diff(
-                file_diffs[0], 
-                after_func['start_line'], 
-                after_func['end_line']
-            )
+        
+        # Skip the first two lines (--- and +++ headers)
+        if len(diff_lines) > 2:
+            generated_patch = '\n'.join(diff_lines[2:])
+            
+            # Extract function diff
+            if after_func:
+                func_diff = extract_function_diff_from_patch(
+                    generated_patch,
+                    file_path,
+                    after_func['start_line'],
+                    after_func['end_line']
+                )
     
     # Count changes
     changes = _count_changes(func_diff) if func_diff else 0
@@ -686,6 +654,11 @@ def analyze_file_diff(
         ]
     
     # Normal case - detect modified functions
-    return detect_modified_functions(
+    modified_functions = detect_modified_functions(
         original_content, new_content, file_diff, language, file_path
-    ) 
+    )
+    
+    # After we've detected all the modified functions, try to identify renamed functions
+    detect_renamed_functions(modified_functions)
+    
+    return modified_functions 

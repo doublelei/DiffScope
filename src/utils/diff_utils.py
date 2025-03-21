@@ -610,17 +610,198 @@ def extract_function_diff(file_diff: FileDiff, func_start: int, func_end: int) -
     if not has_changes:
         return None
     
-    # Generate the function-specific diff
+    # Generate the function-specific diff (without full diff headers)
     result = []
     
-    # Add diff header
-    result.append(f"diff --git {file_diff.old_file} {file_diff.new_file}")
-    result.append(f"--- {file_diff.old_file}")
-    result.append(f"+++ {file_diff.new_file}")
-    
-    # Add all relevant hunks
+    # Add only the hunks
     for header, content in relevant_hunks:
         result.append(f"@@ -{header.original_start},{header.original_count} +{header.new_start},{header.new_count} @@")
         result.extend(content)
+    
+    return '\n'.join(result)
+
+
+def parse_github_patch(patch: str, file_path: str) -> Optional[FileDiff]:
+    """
+    Parse a GitHub API patch directly, without needing to convert to full diff format.
+    GitHub API patches start with @@ and don't include the diff headers.
+    
+    Args:
+        patch: GitHub API patch (starts with @@)
+        file_path: Path of the file being patched
+        
+    Returns:
+        FileDiff object with the parsed patch details
+    """
+    if not patch or not patch.startswith('@@'):
+        logger.warning(f"Not a valid GitHub API patch: {patch[:20]}...")
+        return None
+    
+    # Set up file paths
+    old_file = f"a/{file_path}"
+    new_file = f"b/{file_path}"
+    
+    # Parse hunks
+    hunks = []
+    original_changes = {}
+    new_changes = {}
+    
+    # Split the patch into lines
+    lines = patch.split('\n')
+    i = 0
+    
+    while i < len(lines):
+        # Parse hunk header
+        if not lines[i].startswith('@@'):
+            i += 1
+            continue
+            
+        header_match = RE_HUNK_HEADER.match(lines[i])
+        if not header_match:
+            logger.warning(f"Failed to parse hunk header: {lines[i]}")
+            i += 1
+            continue
+        
+        original_start = int(header_match.group(1))
+        original_count = int(header_match.group(2) or 1)
+        new_start = int(header_match.group(3))
+        new_count = int(header_match.group(4) or 1)
+        
+        # Create hunk header
+        hunk_header = HunkHeader(
+            original_start=original_start,
+            original_count=original_count,
+            new_start=new_start,
+            new_count=new_count
+        )
+        
+        # Parse hunk content
+        hunk_lines = []
+        i += 1  # Move past the header
+        
+        # Keep track of line numbers for mapping
+        original_line_num = original_start
+        new_line_num = new_start
+        
+        # Continue until the next hunk header or end of patch
+        while i < len(lines) and not lines[i].startswith('@@'):
+            line = lines[i]
+            hunk_lines.append(line)
+            
+            # Track changes based on line type
+            if line.startswith(' '):  # Context line
+                original_line_num += 1
+                new_line_num += 1
+            elif line.startswith('-'):  # Removed line
+                original_changes[original_line_num] = line[1:]
+                original_line_num += 1
+            elif line.startswith('+'):  # Added line
+                new_changes[new_line_num] = line[1:]
+                new_line_num += 1
+            elif line == '':  # Empty line (could be context)
+                # Treat empty lines as context
+                original_line_num += 1
+                new_line_num += 1
+            
+            i += 1
+        
+        # Add the hunk to our list
+        hunks.append((hunk_header, hunk_lines))
+    
+    # Return the FileDiff object
+    return FileDiff(
+        old_file=old_file,
+        new_file=new_file,
+        hunks=hunks,
+        original_changes=original_changes,
+        new_changes=new_changes,
+        is_new=False,
+        is_deleted=False,
+        is_binary=False,
+        is_rename=False
+    )
+
+
+def extract_function_diff_from_patch(patch: str, file_path: str, func_start: int, func_end: int) -> Optional[str]:
+    """
+    Extract a diff for a specific function directly from a GitHub API patch.
+    
+    Args:
+        patch: GitHub API patch string
+        file_path: Path of the file
+        func_start: Function start line in the new file
+        func_end: Function end line in the new file
+        
+    Returns:
+        A function-specific diff string, or None if no changes in the function
+    """
+    if not patch or not patch.startswith('@@'):
+        return None
+    
+    # Directly extract the relevant parts from the patch without creating a FileDiff
+    lines = patch.split('\n')
+    relevant_hunks = []
+    has_changes = False
+    
+    i = 0
+    while i < len(lines):
+        if not lines[i].startswith('@@'):
+            i += 1
+            continue
+            
+        # Parse hunk header
+        header_match = RE_HUNK_HEADER.match(lines[i])
+        if not header_match:
+            i += 1
+            continue
+            
+        original_start = int(header_match.group(1))
+        original_count = int(header_match.group(2) or 1)
+        new_start = int(header_match.group(3))
+        new_count = int(header_match.group(4) or 1)
+        
+        # Calculate hunk end
+        new_end = new_start + new_count - 1
+        
+        # Check if this hunk overlaps with our function
+        if new_start <= func_end and new_end >= func_start:
+            # Find the end of this hunk
+            hunk_start = i
+            i += 1
+            while i < len(lines) and not lines[i].startswith('@@'):
+                # Check if any added/changed lines fall within our function
+                line = lines[i]
+                if line.startswith('+'):
+                    # This is a simplified check - we're assuming line numbers 
+                    # based on hunk position
+                    # For a more accurate check, we'd need to track positions
+                    current_line = new_start + (i - hunk_start - 1)
+                    if func_start <= current_line <= func_end:
+                        has_changes = True
+                elif line.startswith('-'):
+                    # For removed lines, we need more complex logic to map
+                    # original line to new position, but this is a start
+                    has_changes = True
+                
+                i += 1
+                
+            # If we have changes or if we can't be certain, include the hunk
+            if has_changes:
+                relevant_hunks.append((hunk_start, i))
+            continue
+        
+        # Skip to the next hunk
+        i += 1
+        while i < len(lines) and not lines[i].startswith('@@'):
+            i += 1
+    
+    # If we didn't find any relevant changes, return None
+    if not relevant_hunks:
+        return None
+    
+    # Extract only the relevant hunks
+    result = []
+    for start, end in relevant_hunks:
+        result.extend(lines[start:end])
     
     return '\n'.join(result) 
