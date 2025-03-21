@@ -5,11 +5,11 @@ This module integrates diff parsing with function detection to identify
 changed functions in source code and analyze the nature of those changes.
 """
 
-from typing import List, Dict, Optional, Set, Tuple, Any
+from typing import List, Dict, Optional, Set, Tuple, Any, Union
 import logging
 import difflib
 from ..utils.diff_utils import (
-    parse_unified_diff,
+    parse_diff,
     get_changed_line_numbers,
     map_original_to_new_line,
     map_new_to_original_line,
@@ -27,6 +27,120 @@ from ..models import ModifiedFunction, FunctionChangeType
 logger = logging.getLogger(__name__)
 
 
+def extract_functions_from_content(file_content: str, language: str, file_path: str = None) -> List[Dict]:
+    """
+    Extract function information from file content.
+    
+    Args:
+        file_content: Content of the file
+        language: Programming language of the file
+        file_path: Optional path to the file for reference
+        
+    Returns:
+        List of function information dictionaries
+    """
+    if not file_content:
+        return []
+        
+    return parse_functions(file_content, language)
+
+
+def create_modified_functions(
+    original_content: Optional[str],
+    new_content: Optional[str],
+    language: str,
+    file_path: str,
+    patch_or_file_diff: Optional[Union[str, FileDiff]] = None
+) -> List[ModifiedFunction]:
+    """
+    Identify functions that were modified between two versions of a file.
+    
+    Args:
+        original_content: Content of the original file
+        new_content: Content of the new file
+        language: Programming language
+        file_path: Path to the file
+        patch_or_file_diff: Optional unified diff patch (string) or FileDiff object
+        
+    Returns:
+        List of ModifiedFunction objects
+    """
+    # Handle special cases for new or deleted files
+    if not original_content and new_content:
+        # New file - all functions are added
+        new_functions = parse_functions(new_content, language)
+        return [
+            ModifiedFunction(
+                name=func['name'],
+                file=file_path,
+                type=func['node_type'],
+                change_type=FunctionChangeType.ADDED,
+                original_start=None,
+                original_end=None,
+                new_start=func['start_line'],
+                new_end=func['end_line'],
+                changes=func['end_line'] - func['start_line'] + 1,
+                diff=None  # No diff for new files
+            )
+            for func in new_functions
+        ]
+    
+    if original_content and not new_content:
+        # Deleted file - all functions are deleted
+        orig_functions = parse_functions(original_content, language)
+        return [
+            ModifiedFunction(
+                name=func['name'],
+                file=file_path,
+                type=func['node_type'],
+                change_type=FunctionChangeType.DELETED,
+                original_start=func['start_line'],
+                original_end=func['end_line'],
+                new_start=None,
+                new_end=None,
+                changes=func['end_line'] - func['start_line'] + 1,
+                diff=None  # No diff for deleted files
+            )
+            for func in orig_functions
+        ]
+    
+    # Handle the patch or FileDiff argument
+    file_diff = None
+    
+    if isinstance(patch_or_file_diff, FileDiff):
+        # Already have a FileDiff object
+        file_diff = patch_or_file_diff
+    elif isinstance(patch_or_file_diff, str):
+        # Parse the patch string to get FileDiff objects
+        file_diffs = parse_diff(patch_or_file_diff)
+        if file_diffs:
+            file_diff = file_diffs[0]
+    
+    # If no patch/file_diff is provided but we have both contents, generate a diff
+    if not file_diff and original_content and new_content:
+        # Generate a unified diff
+        diff_lines = list(difflib.unified_diff(
+            original_content.splitlines(),
+            new_content.splitlines(),
+            fromfile='original',
+            tofile='modified',
+            lineterm=''
+        ))
+        patch = '\n'.join(diff_lines)
+        file_diffs = parse_diff(patch)
+        if file_diffs:
+            file_diff = file_diffs[0]
+    
+    if file_diff:
+        # Analyze the file diff
+        return analyze_file_diff(file_diff, original_content, new_content, language, file_path)
+    
+    # If we get here, we couldn't analyze the changes
+    logger.warning(f"Could not analyze changes for {file_path}")
+    return []
+
+
+# Keeping the original function for backward compatibility
 def detect_modified_functions(
     original_content: str,
     new_content: str,
@@ -154,6 +268,166 @@ def detect_modified_functions(
                 modified_functions.append(modified_func)
     
     return modified_functions
+
+
+def analyze_function_changes(
+    before_func: Dict, 
+    after_func: Dict,
+    before_content: str, 
+    after_content: str,
+    patch_or_file_diff: Union[str, FileDiff, None] = None
+) -> Dict:
+    """
+    Analyze what aspects of a function changed between versions.
+    
+    Args:
+        before_func: Function information before changes
+        after_func: Function information after changes
+        before_content: File content before changes
+        after_content: File content after changes
+        patch_or_file_diff: Unified diff of the file (string) or FileDiff object
+        
+    Returns:
+        Dictionary with change information
+    """
+    change_type = _determine_change_type(before_func, after_func, before_content, after_content)
+    
+    # Extract function contents
+    before_func_content = extract_function_content(before_content, before_func)
+    after_func_content = extract_function_content(after_content, after_func)
+    
+    # Handle the diff
+    func_diff = None
+    
+    if isinstance(patch_or_file_diff, FileDiff):
+        # Already have a FileDiff object
+        file_diff = patch_or_file_diff
+        if after_func:
+            func_diff = extract_function_diff(
+                file_diff, 
+                after_func['start_line'], 
+                after_func['end_line']
+            )
+    elif isinstance(patch_or_file_diff, str):
+        # Parse the patch string to get FileDiff objects
+        file_diffs = parse_diff(patch_or_file_diff)
+        if file_diffs and after_func:
+            func_diff = extract_function_diff(
+                file_diffs[0], 
+                after_func['start_line'], 
+                after_func['end_line']
+            )
+    elif patch_or_file_diff is None and before_content and after_content:
+        # Generate a diff if none provided
+        diff_lines = list(difflib.unified_diff(
+            before_content.splitlines(),
+            after_content.splitlines(),
+            fromfile='original',
+            tofile='modified',
+            lineterm=''
+        ))
+        patch = '\n'.join(diff_lines)
+        file_diffs = parse_diff(patch)
+        if file_diffs and after_func:
+            func_diff = extract_function_diff(
+                file_diffs[0], 
+                after_func['start_line'], 
+                after_func['end_line']
+            )
+    
+    # Count changes
+    changes = _count_changes(func_diff) if func_diff else 0
+    
+    return {
+        'change_type': change_type,
+        'before_content': before_func_content,
+        'after_content': after_func_content,
+        'diff': func_diff,
+        'changes': changes
+    }
+
+
+def detect_renamed_functions(modified_functions: List[ModifiedFunction]) -> None:
+    """
+    Identify renamed functions by comparing added and deleted functions.
+    Modifies the provided list in-place to update change types.
+    
+    Args:
+        modified_functions: List of ModifiedFunction objects
+    """
+    # Collect added and deleted functions
+    added_functions = [f for f in modified_functions if f.change_type == FunctionChangeType.ADDED]
+    deleted_functions = [f for f in modified_functions if f.change_type == FunctionChangeType.DELETED]
+    
+    # Skip if either list is empty
+    if not added_functions or not deleted_functions:
+        return
+    
+    # Track which functions have been processed
+    processed_added = set()
+    processed_deleted = set()
+    
+    # Find potential renamed pairs
+    for added_idx, added_func in enumerate(added_functions):
+        for deleted_idx, deleted_func in enumerate(deleted_functions):
+            # Skip already processed functions
+            if deleted_idx in processed_deleted:
+                continue
+                
+            # Check if these are a potential rename pair (same file, similar content, etc.)
+            if added_func.file == deleted_func.file:
+                # For now, simple implementation: mark the first pair of added/deleted 
+                # functions from the same file as a rename
+                # In a real implementation, calculate similarity between content
+                
+                # Update the added function to be a renamed function
+                for i, mf in enumerate(modified_functions):
+                    if (mf is added_func):
+                        modified_functions[i] = ModifiedFunction(
+                            name=added_func.name,
+                            file=added_func.file,
+                            type=added_func.type,
+                            change_type=FunctionChangeType.RENAMED,
+                            original_name=deleted_func.name,
+                            original_start=deleted_func.original_start,
+                            original_end=deleted_func.original_end,
+                            new_start=added_func.new_start,
+                            new_end=added_func.new_end,
+                            changes=added_func.changes,
+                            diff=added_func.diff
+                        )
+                        processed_added.add(added_idx)
+                        processed_deleted.add(deleted_idx)
+                        
+                        # Remove the deleted function as it's now accounted for
+                        modified_functions.remove(deleted_func)
+                        break
+                
+                if added_idx in processed_added:
+                    # We've processed this added function, move to the next one
+                    break
+
+
+def calculate_function_similarity(content1: str, content2: str) -> float:
+    """
+    Calculate similarity between two function contents.
+    
+    Args:
+        content1: First function content
+        content2: Second function content
+        
+    Returns:
+        Similarity score between 0 and 1
+    """
+    if not content1 or not content2:
+        return 0.0
+    
+    # Normalize whitespace
+    content1 = ' '.join(content1.split())
+    content2 = ' '.join(content2.split())
+    
+    # Use difflib to calculate similarity
+    return difflib.SequenceMatcher(None, content1, content2).ratio()
 
 
 def _find_matching_function(func: Dict, candidates: List[Dict]) -> Optional[Dict]:
@@ -373,7 +647,7 @@ def analyze_file_diff(
         logger.info(f"Skipping binary file: {file_path}")
         return []
     
-    if file_diff.is_new_file:
+    if file_diff.is_new:
         # All functions are new
         new_functions = parse_functions(new_content, language)
         return [
@@ -392,7 +666,7 @@ def analyze_file_diff(
             for func in new_functions
         ]
     
-    if file_diff.is_deleted_file:
+    if file_diff.is_deleted:
         # All functions are deleted
         orig_functions = parse_functions(original_content, language)
         return [
