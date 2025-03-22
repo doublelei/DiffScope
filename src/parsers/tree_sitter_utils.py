@@ -13,7 +13,7 @@ _parsers: Dict[str, Any] = {}
 _languages: Dict[str, Any] = {}
 
 # List of languages with verified function detection support
-SUPPORTED_LANGUAGES = ['python', 'javascript']
+SUPPORTED_LANGUAGES = ['python', 'javascript', 'typescript', 'java', 'c', 'cpp', 'go', 'php', 'rust', 'ruby', 'csharp']
 
 
 def get_tree_sitter_parser(language: str) -> Any:
@@ -91,10 +91,13 @@ def is_language_supported(language: str) -> bool:
 
 def get_supported_languages() -> List[str]:
     """
-    Get a list of languages supported for function detection.
+    Get a list of languages fully supported for function detection.
+    This includes only languages with verified function detection queries.
+    For checking if a specific language is usable (including tree-sitter support),
+    use is_language_supported() instead.
     
     Returns:
-        List of supported language names
+        List of fully supported language names
     """
     return SUPPORTED_LANGUAGES.copy()
 

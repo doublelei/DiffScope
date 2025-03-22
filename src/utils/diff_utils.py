@@ -8,6 +8,7 @@ and mapping changes to line numbers in files.
 import re
 from typing import Dict, List, Tuple, Optional, Set, NamedTuple
 import logging
+import difflib
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -804,4 +805,93 @@ def extract_function_diff_from_patch(patch: str, file_path: str, func_start: int
     for start, end in relevant_hunks:
         result.extend(lines[start:end])
     
-    return '\n'.join(result) 
+    return '\n'.join(result)
+
+
+def extract_changed_lines(patch: str) -> Tuple[Set[int], Set[int]]:
+    """
+    Extract changed line numbers directly from a patch.
+    Returns (original_changed_lines, new_changed_lines) for efficient function detection.
+    
+    This optimized function eliminates unnecessary processing and data structures.
+    """
+    # Sets are more efficient for line number lookups
+    original_changed = set()
+    new_changed = set()
+    
+    # Quick validation
+    if not patch or not patch.startswith('@@'):
+        return original_changed, new_changed
+    
+    lines = patch.split('\n')
+    i = 0
+    
+    # Single pass through the patch
+    while i < len(lines):
+        # Skip non-header lines at this level
+        if not lines[i].startswith('@@'):
+            i += 1
+            continue
+            
+        # Extract line numbers from header
+        header_match = RE_HUNK_HEADER.match(lines[i])
+        if not header_match:
+            i += 1
+            continue
+        
+        # Get starting line numbers
+        orig_line = int(header_match.group(1))
+        new_line = int(header_match.group(3))
+        
+        # Move past header
+        i += 1
+        
+        # Process lines in this hunk
+        while i < len(lines) and not lines[i].startswith('@@'):
+            line = lines[i]
+            
+            # Fast character-based checking
+            if not line:  # Empty line
+                orig_line += 1
+                new_line += 1
+            elif line.startswith(' '):  # Context line
+                orig_line += 1
+                new_line += 1
+            elif line.startswith('-'):  # Removed line
+                original_changed.add(orig_line)
+                orig_line += 1
+            elif line.startswith('+'):  # Added line
+                new_changed.add(new_line)
+                new_line += 1
+            
+            i += 1
+    
+    return original_changed, new_changed
+
+
+def create_simple_diff(content_old: str, content_new: str) -> str:
+    """
+    Create a simple line-by-line diff between two pieces of content.
+    """
+    if not content_old and content_new:
+        # All additions
+        return '\n'.join([f"+{line}" for line in content_new.splitlines()])
+    
+    if content_old and not content_new:
+        # All deletions
+        return '\n'.join([f"-{line}" for line in content_old.splitlines()])
+    
+    # Use difflib for line-by-line comparison
+    diff_lines = []
+    for line in difflib.unified_diff(
+        content_old.splitlines(),
+        content_new.splitlines(),
+        n=0,  # No context
+        lineterm=''
+    ):
+        # Skip headers
+        if line.startswith('---') or line.startswith('+++') or line.startswith('@@'):
+            continue
+        diff_lines.append(line)
+    
+    return '\n'.join(diff_lines) 

@@ -6,13 +6,14 @@ at the function level, identifying exactly which functions
 were modified, added, or deleted in each commit.
 """
 
-from .core.git_analyzer import analyze_github_commit
+__version__ = "0.1.0"
+__author__ = "DiffScope Team"
+
 from .core.commit_analyzer import analyze_commit_with_functions
 from .models import (
     ModifiedFile,
     ModifiedFunction,
     CommitAnalysisResult,
-    FileChangeType,
     FunctionChangeType
 )
 
@@ -24,7 +25,6 @@ __all__ = [
     'ModifiedFile',
     'ModifiedFunction',
     'CommitAnalysisResult',
-    'FileChangeType',
     'FunctionChangeType'
 ]
 

@@ -1,15 +1,20 @@
+"""
+GitHub commit analyzer.
+
+This module provides functions for analyzing GitHub commits at the file level,
+extracting metadata about files changed in a commit.
+"""
+
 from typing import Dict, List, Optional, Tuple, Any
 import os
 
 from ..utils.github_api import (
     parse_github_url,
     get_commit_data,
-    get_commit_files,
-    get_file_content_before_after
 )
-from ..models import ModifiedFile, ModifiedFunction, CommitAnalysisResult
+from ..models import ModifiedFile, CommitAnalysisResult
 
-def analyze_github_commit(commit_url: str) -> CommitAnalysisResult:
+def analyze_github_commit_metadata(commit_url: str) -> CommitAnalysisResult:
     """
     Analyze a GitHub commit and extract file-level changes.
     
@@ -18,6 +23,7 @@ def analyze_github_commit(commit_url: str) -> CommitAnalysisResult:
         
     Returns:
         CommitAnalysisResult with file-level changes
+
     """
     # Parse GitHub URL to get owner, repo, and commit SHA
     owner, repo, commit_sha = parse_github_url(commit_url)
@@ -38,6 +44,8 @@ def analyze_github_commit(commit_url: str) -> CommitAnalysisResult:
     
     # Create commit analysis result
     result = CommitAnalysisResult(
+        owner=owner,
+        repo=repo,
         commit_sha=commit_sha,
         commit_message=commit_message,
         commit_author=commit_author,
@@ -68,7 +76,6 @@ def convert_github_files_to_modified_files(github_files: List[Dict[str, Any]]) -
         deletions = file_data.get('deletions', 0)
         changes = file_data.get('changes', 0)
         patch = file_data.get('patch', None)
-        
         # Detect file language
         language = detect_file_language(filename)
         
@@ -108,7 +115,7 @@ def detect_file_language(file_path: str) -> Optional[str]:
         '.cpp': 'C++',
         '.h': 'C',
         '.hpp': 'C++',
-        '.cs': 'C#',
+        '.cs': 'csharp',
         '.go': 'Go',
         '.rb': 'Ruby',
         '.php': 'PHP',

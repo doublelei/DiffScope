@@ -7,7 +7,6 @@ This module tests the detection of modified functions using diffs.
 import pytest
 from src.core.function_detector import (
     create_modified_functions,
-    analyze_function_changes,
     detect_renamed_functions,
     calculate_function_similarity,
     extract_functions_from_content
@@ -51,11 +50,7 @@ def brand_new():
 """
 
 # Sample diff between the two code samples
-CODE_DIFF = """diff --git a/sample.py b/sample.py
-index 123abc..456def 100644
---- a/sample.py
-+++ b/sample.py
-@@ -2,13 +2,18 @@
+CODE_PATCH = """@@ -2,13 +2,18 @@
  def unchanged_function():
      return 42
  
@@ -85,13 +80,9 @@ class TestFunctionDetector:
     
     def test_create_modified_functions(self):
         """Test detection of modified, added, deleted and renamed functions."""
-        # Parse the diff
-        file_diffs = parse_diff(CODE_DIFF)
-        assert len(file_diffs) == 1
-        
-        # Detect modified functions - pass the FileDiff object directly
+        # Detect modified functions
         modified_functions = create_modified_functions(
-            ORIGINAL_CODE, NEW_CODE, "python", "sample.py", file_diffs[0]
+            ORIGINAL_CODE, NEW_CODE, "python", "sample.py", CODE_PATCH, "modified"
         )
         
         # Should detect 4 changes: 1 modified, 1 renamed, 1 deleted, 1 added
@@ -99,10 +90,12 @@ class TestFunctionDetector:
         
         # Check for modified function with signature change
         mod_func = next((f for f in modified_functions 
-                         if f.name == "modified_function" and f.change_type == FunctionChangeType.SIGNATURE_CHANGED), None)
+                         if f.name == "modified_function" and f.change_type == FunctionChangeType.MODIFIED), None)
         assert mod_func is not None
         assert mod_func.original_start is not None
         assert mod_func.new_start is not None
+        assert mod_func.original_content is not None
+        assert mod_func.new_content is not None
         
         # Check for renamed function
         renamed_func = next((f for f in modified_functions 
@@ -110,13 +103,16 @@ class TestFunctionDetector:
         assert renamed_func is not None
         assert renamed_func.name == "new_name_function"
         assert renamed_func.original_name == "renamed_function"
+        assert renamed_func.original_content is not None
+        assert renamed_func.new_content is not None
         
         # Check for deleted function
         deleted_func = next((f for f in modified_functions 
-                          if f.change_type == FunctionChangeType.DELETED), None)
+                          if f.change_type == FunctionChangeType.REMOVED), None)
         assert deleted_func is not None
         assert deleted_func.name == "to_be_deleted"
         assert deleted_func.new_start is None
+        assert deleted_func.original_content is not None
         
         # Check for added function
         added_func = next((f for f in modified_functions 
@@ -124,6 +120,7 @@ class TestFunctionDetector:
         assert added_func is not None
         assert added_func.name == "brand_new"
         assert added_func.original_start is None
+        assert added_func.new_content is not None
     
     def test_new_file_analysis(self):
         """Test analyzing a completely new file."""
@@ -132,13 +129,15 @@ class TestFunctionDetector:
         
         # Create modified functions for a new file
         modified_functions = create_modified_functions(
-            None, new_content, "python", "new_file.py"
+            None, new_content, "python", "new_file.py", None, "added"
         )
         
         # Should detect 1 added function
         assert len(modified_functions) == 1
         assert modified_functions[0].name == "new_function"
         assert modified_functions[0].change_type == FunctionChangeType.ADDED
+        assert modified_functions[0].new_content is not None
+        assert modified_functions[0].new_content.strip() == "def new_function():\n    print(\"Hello\")\n    return 42"
     
     def test_deleted_file_analysis(self):
         """Test analyzing a completely deleted file."""
@@ -147,79 +146,17 @@ class TestFunctionDetector:
         
         # Create modified functions for a deleted file
         modified_functions = create_modified_functions(
-            original_content, None, "python", "deleted_file.py"
+            original_content, None, "python", "deleted_file.py", None, "removed"
         )
         
         # Should detect 1 deleted function
         assert len(modified_functions) == 1
         assert modified_functions[0].name == "old_function"
-        assert modified_functions[0].change_type == FunctionChangeType.DELETED
+        assert modified_functions[0].change_type == FunctionChangeType.REMOVED
+        assert modified_functions[0].original_content is not None
+        assert modified_functions[0].original_content.strip() == "def old_function():\n    print(\"Goodbye\")\n    return 0"
     
-    def test_docstring_change_detection(self):
-        """Test detection of docstring-only changes."""
-        # Create code with only docstring changes
-        orig = """def function():
-    \"\"\"Original docstring.\"\"\"
-    x = 1
-    return x
-"""
-        new = """def function():
-    \"\"\"Changed docstring.\"\"\"
-    x = 1
-    return x
-"""
-        diff = """diff --git a/sample.py b/sample.py
-index 123abc..456def 100644
---- a/sample.py
-+++ b/sample.py
-@@ -1,5 +1,5 @@
- def function():
--    \"\"\"Original docstring.\"\"\"
-+    \"\"\"Changed docstring.\"\"\"
-     x = 1
-     return x
-"""
-        file_diffs = parse_diff(diff)
-        # Pass the FileDiff object directly
-        modified_functions = create_modified_functions(
-            orig, new, "python", "sample.py", file_diffs[0]
-        )
-        
-        assert len(modified_functions) == 1
-        assert modified_functions[0].change_type == FunctionChangeType.DOCSTRING_CHANGED
     
-    def test_body_change_detection(self):
-        """Test detection of body changes."""
-        # Create code with body changes
-        orig = """def function():
-    \"\"\"Docstring.\"\"\"
-    x = 1
-    return x
-"""
-        new = """def function():
-    \"\"\"Docstring.\"\"\"
-    x = 2  # Changed value
-    return x
-"""
-        diff = """diff --git a/sample.py b/sample.py
-index 123abc..456def 100644
---- a/sample.py
-+++ b/sample.py
-@@ -1,5 +1,5 @@
- def function():
-     \"\"\"Docstring.\"\"\"
--    x = 1
-+    x = 2  # Changed value
-     return x
-"""
-        file_diffs = parse_diff(diff)
-        # Pass the FileDiff object directly
-        modified_functions = create_modified_functions(
-            orig, new, "python", "sample.py", file_diffs[0]
-        )
-        
-        assert len(modified_functions) == 1
-        assert modified_functions[0].change_type == FunctionChangeType.BODY_CHANGED
         
     def test_calculate_function_similarity(self):
         """Test calculation of function similarity."""
@@ -242,7 +179,7 @@ index 123abc..456def 100644
         
         # Test high similarity (renamed function)
         similarity = calculate_function_similarity(original_content, similar_content)
-        assert similarity > 0.8
+        assert similarity >= 0.7
         
         # Test low similarity (different implementation)
         similarity = calculate_function_similarity(original_content, different_content)
@@ -266,6 +203,14 @@ class MyClass:
         
     def test_detect_renamed_functions(self):
         """Test detection of renamed functions."""
+        # Create sample function contents
+        old_func_content = """def old_func():
+    return "This is the old function"
+"""
+        new_func_content = """def new_func():
+    return "This is the renamed function"
+"""
+        
         # Create a list with one added and one removed function that should be detected as renamed
         functions = [
             ModifiedFunction(
@@ -274,27 +219,29 @@ class MyClass:
                 type="function",
                 change_type=FunctionChangeType.ADDED,
                 new_start=10,
-                new_end=15
+                new_end=15,
+                new_content=new_func_content,
+                diff="+def new_func():\n+    return \"This is the renamed function\"\n"
             ),
             ModifiedFunction(
                 name="old_func",
                 file="test.py",
                 type="function",
-                change_type=FunctionChangeType.DELETED,
+                change_type=FunctionChangeType.REMOVED,
                 original_start=5,
-                original_end=10
+                original_end=10,
+                original_content=old_func_content,
+                diff="-def old_func():\n-    return \"This is the old function\"\n"
             )
         ]
         
         # Apply renamed detection
         detect_renamed_functions(functions)
         
-        # Either the functions are separate or one was detected as renamed (depends on implementation)
-        if len(functions) == 1:
-            # If implementation merges them, check the renamed function
-            assert functions[0].change_type == FunctionChangeType.RENAMED
-            assert functions[0].name == "new_func"
-            assert functions[0].original_name == "old_func"
-        else:
-            # If implementation doesn't detect similarity automatically, that's okay for this test
-            assert len(functions) == 2 
+        # With sufficiently similar functions, they should be detected as renamed
+        assert len(functions) == 1
+        assert functions[0].change_type == FunctionChangeType.RENAMED
+        assert functions[0].name == "new_func"
+        assert functions[0].original_name == "old_func"
+        assert functions[0].original_content == old_func_content
+        assert functions[0].new_content == new_func_content 

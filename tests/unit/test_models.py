@@ -6,7 +6,6 @@ This module tests the data structures defined in the models module.
 
 import pytest
 from src.models import (
-    FileChangeType,
     FunctionChangeType,
     ModifiedFile,
     ModifiedFunction,
@@ -21,7 +20,7 @@ class TestModels:
         """Test creating a ModifiedFile object."""
         file = ModifiedFile(
             filename="path/to/file.py",
-            status=FileChangeType.MODIFIED,
+            status= "modified",
             additions=10,
             deletions=5,
             changes=15,
@@ -29,7 +28,7 @@ class TestModels:
         )
         
         assert file.filename == "path/to/file.py"
-        assert file.status == FileChangeType.MODIFIED
+        assert file.status == "modified"
         assert file.additions == 10
         assert file.deletions == 5
         assert file.changes == 15
@@ -41,7 +40,7 @@ class TestModels:
             name="test_function",
             file="path/to/file.py",
             type="function",
-            change_type=FunctionChangeType.BODY_CHANGED,
+            change_type=FunctionChangeType.MODIFIED,
             new_start=10,
             new_end=20,
             changes=5,
@@ -51,7 +50,7 @@ class TestModels:
         assert function.name == "test_function"
         assert function.file == "path/to/file.py"
         assert function.type == "function"
-        assert function.change_type == FunctionChangeType.BODY_CHANGED
+        assert function.change_type == FunctionChangeType.MODIFIED
         assert function.new_start == 10
         assert function.new_end == 20
         assert function.changes == 5
@@ -61,7 +60,7 @@ class TestModels:
         """Test creating a CommitAnalysisResult object."""
         file1 = ModifiedFile(
             filename="path/to/file1.py",
-            status=FileChangeType.MODIFIED,
+            status="modified",
             additions=10,
             deletions=5,
             changes=15
@@ -69,7 +68,7 @@ class TestModels:
         
         file2 = ModifiedFile(
             filename="path/to/file2.py",
-            status=FileChangeType.ADDED,
+            status="added",
             additions=20,
             deletions=0,
             changes=20
@@ -79,7 +78,7 @@ class TestModels:
             name="test_function1",
             file="path/to/file1.py",
             type="function",
-            change_type=FunctionChangeType.BODY_CHANGED
+            change_type=FunctionChangeType.MODIFIED
         )
         
         result = CommitAnalysisResult(
@@ -100,21 +99,6 @@ class TestModels:
         assert len(result.modified_functions) == 1
         assert result.modified_functions[0].name == "test_function1"
 
-    def test_file_change_type_enum(self):
-        """Test the FileChangeType enum."""
-        assert FileChangeType.ADDED.value == "added"
-        assert FileChangeType.MODIFIED.value == "modified"
-        assert FileChangeType.REMOVED.value == "removed"
-        assert FileChangeType.RENAMED.value == "renamed"
-
-    def test_function_change_type_enum(self):
-        """Test the FunctionChangeType enum."""
-        assert FunctionChangeType.ADDED.value == "added"
-        assert FunctionChangeType.DELETED.value == "deleted"
-        assert FunctionChangeType.RENAMED.value == "renamed"
-        assert FunctionChangeType.SIGNATURE_CHANGED.value == "signature_changed"
-        assert FunctionChangeType.BODY_CHANGED.value == "body_changed"
-        assert FunctionChangeType.DOCSTRING_CHANGED.value == "docstring_changed"
         
     def test_commit_analysis_result_empty_lists(self):
         """Test CommitAnalysisResult initializes empty lists."""
@@ -130,7 +114,7 @@ class TestModels:
         """Test creating a ModifiedFile with a patch."""
         file = ModifiedFile(
             filename="path/to/file.py",
-            status=FileChangeType.MODIFIED,
+            status="modified",
             additions=10,
             deletions=5,
             changes=15,
@@ -143,20 +127,20 @@ class TestModels:
         """Test creating a renamed file."""
         file = ModifiedFile(
             filename="path/to/new_file.py",
-            status=FileChangeType.RENAMED,
+            status="renamed",
             additions=0,
             deletions=0,
             changes=0,
             previous_filename="path/to/old_file.py"
         )
         
-        assert file.status == FileChangeType.RENAMED
+        assert file.status == "renamed"
         assert file.previous_filename == "path/to/old_file.py"
         
     def test_renamed_function(self):
         """Test creating a renamed function."""
         function = ModifiedFunction(
-            name="new_function_name",
+            name="function_name",
             file="path/to/file.py",
             type="function",
             change_type=FunctionChangeType.RENAMED,

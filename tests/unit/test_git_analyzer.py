@@ -1,5 +1,5 @@
 import pytest
-from src.core.git_analyzer import detect_file_language, convert_github_files_to_modified_files, analyze_github_commit
+from src.core.git_analyzer import detect_file_language, convert_github_files_to_modified_files, analyze_github_commit_metadata
 from src.models import ModifiedFile, CommitAnalysisResult
 
 class TestGitAnalyzer:
@@ -97,12 +97,14 @@ class TestGitAnalyzer:
         commit_url = "https://github.com/python/cpython/commit/d783d7b51d31db568de6b3438f4e805acff663da"
         
         # Analyze the commit
-        result = analyze_github_commit(commit_url)
+        result = analyze_github_commit_metadata(commit_url)
         
         # Verify result structure
         assert isinstance(result, CommitAnalysisResult)
         assert result.commit_sha == "d783d7b51d31db568de6b3438f4e805acff663da"
         assert result.repository_url == "https://github.com/python/cpython"
+        assert result.owner == "python"
+        assert result.repo == "cpython"
         assert len(result.modified_files) > 0
         
         # Verify first modified file

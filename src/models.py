@@ -7,25 +7,15 @@ for representing files, functions, and changes.
 
 from typing import List, Dict, Optional, Any
 from enum import Enum
-from dataclasses import dataclass
-
-
-class FileChangeType(str, Enum):
-    """Type of change to a file."""
-    ADDED = "added"
-    MODIFIED = "modified"
-    REMOVED = "removed"
-    RENAMED = "renamed"
+from dataclasses import dataclass, field
 
 
 class FunctionChangeType(str, Enum):
     """Type of change to a function."""
     ADDED = "added"
-    DELETED = "deleted"
+    MODIFIED = "modified"
+    REMOVED = "removed"
     RENAMED = "renamed"
-    SIGNATURE_CHANGED = "signature_changed"
-    BODY_CHANGED = "body_changed"
-    DOCSTRING_CHANGED = "docstring_changed"
 
 
 @dataclass
@@ -55,21 +45,19 @@ class ModifiedFunction:
     changes: int = 0
     diff: Optional[str] = None
     original_name: Optional[str] = None  # For renamed functions
+    original_content: Optional[str] = None  # Complete function content before changes
+    new_content: Optional[str] = None  # Complete function content after changes
 
 
 @dataclass
 class CommitAnalysisResult:
     """Result of analyzing a commit."""
-    commit_sha: str
-    repository_url: str
+    owner: str = field(default_factory=str)
+    repo: str = field(default_factory=str)
+    commit_sha: str = field(default_factory=str)
+    repository_url: str = field(default_factory=str)
     commit_author: Optional[str] = None
     commit_date: Optional[str] = None
     commit_message: Optional[str] = None
-    modified_files: List[ModifiedFile] = None
-    modified_functions: List[ModifiedFunction] = None
-    
-    def __post_init__(self):
-        if self.modified_files is None:
-            self.modified_files = []
-        if self.modified_functions is None:
-            self.modified_functions = []
+    modified_files: List[ModifiedFile] = field(default_factory=list)
+    modified_functions: List[ModifiedFunction] = field(default_factory=list)

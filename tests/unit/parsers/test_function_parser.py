@@ -129,13 +129,13 @@ class TestFunctionParser:
         func2 = next(f for f in functions if f['name'] == 'func2')
         
         # Extract func1 content
-        content1 = extract_function_content(code, func1)
+        content1 = extract_function_content(code, func1['start_line'], func1['end_line'])
         assert "print(1)" in content1
         assert "print(2)" in content1
         assert "print(3)" not in content1
         
         # Extract func2 content
-        content2 = extract_function_content(code, func2)
+        content2 = extract_function_content(code, func2['start_line'], func2['end_line'])
         assert "print(3)" in content2
         assert "print(4)" in content2
         assert "print(1)" not in content2
@@ -145,20 +145,19 @@ class TestFunctionParser:
         func_info = {'start_line': 1, 'end_line': 3}
         
         # Empty content
-        content = extract_function_content("", func_info)
+        content = extract_function_content("", func_info['start_line'], func_info['end_line'])
         assert content is None
         
         # None content
-        content = extract_function_content(None, func_info)
+        content = extract_function_content(None, func_info['start_line'], func_info['end_line'])
         assert content is None
         
         # Line numbers out of range
         func_info = {'start_line': 100, 'end_line': 105}
-        content = extract_function_content("Line 1\nLine 2\nLine 3", func_info)
+        content = extract_function_content("Line 1\nLine 2\nLine 3", func_info['start_line'], func_info['end_line'] )
         assert content is None
         
     # CLI-based testing methods
-    
     def test_parse_cli_input(self, input_content, detect_language, expected_output):
         """
         Test parsing functions from a file specified via command line.

@@ -153,7 +153,7 @@ def main():
     if file_diff.is_new_file:
         print(f"New file: {new_file_path}")
     elif file_diff.is_deleted_file:
-        print(f"Deleted file: {old_file_path}")
+        print(f"Removed file: {old_file_path}")
     elif file_diff.is_rename:
         print(f"Renamed file: {old_file_path} -> {new_file_path}")
     else:

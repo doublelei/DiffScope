@@ -1,11 +1,9 @@
 import re
 import os
-from typing import Dict, List, Tuple, Optional, Union, Any
-import base64
+from typing import Dict, Tuple, Optional, Any
 from github import Github, Auth
 from github.GithubException import GithubException
 from github.Commit import Commit
-from github.ContentFile import ContentFile
 from github.Repository import Repository
 
 # Initialize GitHub client with authentication token if available
@@ -86,7 +84,6 @@ def get_commit_data(owner: str, repo: str, commit_sha: str) -> Dict[str, Any]:
         Dictionary containing commit data
     """
     commit = get_commit(owner, repo, commit_sha)
-    
     # Convert commit object to dictionary with essential information
     files_data = []
     for file in commit.files:
@@ -124,34 +121,6 @@ def get_commit_data(owner: str, repo: str, commit_sha: str) -> Dict[str, Any]:
     }
     
     return commit_data
-
-def get_commit_files(owner: str, repo: str, commit_sha: str) -> List[Dict[str, Any]]:
-    """
-    Get list of files changed in a commit from GitHub API.
-    
-    Args:
-        owner: Repository owner
-        repo: Repository name
-        commit_sha: Commit SHA
-        
-    Returns:
-        List of file data dictionaries
-    """
-    commit = get_commit(owner, repo, commit_sha)
-    
-    files_data = []
-    for file in commit.files:
-        file_dict = {
-            'filename': file.filename,
-            'status': file.status,
-            'additions': file.additions,
-            'deletions': file.deletions,
-            'changes': file.changes,
-            'patch': file.patch if hasattr(file, 'patch') else None
-        }
-        files_data.append(file_dict)
-    
-    return files_data
 
 def get_file_content(owner: str, repo: str, file_path: str, ref: str) -> Optional[str]:
     """

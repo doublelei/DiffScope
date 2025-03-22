@@ -5,24 +5,14 @@ This module connects the GitHub API integration with function-level
 change detection to provide a complete analysis of commits.
 """
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 import logging
 
-from ..utils.github_api import (
-    parse_github_url,
-    get_commit_data,
-    get_commit_files,
-    get_file_content_before_after
-)
-from ..core.git_analyzer import (
-    analyze_github_commit,
-    detect_file_language
-)
-from ..core.function_detector import (
-    create_modified_functions,
-    detect_renamed_functions
-)
+from ..utils.github_api import get_file_content_before_after
+from ..core.git_analyzer import analyze_github_commit_metadata
+from ..core.function_detector import create_modified_functions, detect_renamed_functions
 from ..models import CommitAnalysisResult, ModifiedFile, ModifiedFunction
+from ..parsers.tree_sitter_utils import SUPPORTED_LANGUAGES
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -39,10 +29,7 @@ def analyze_commit_with_functions(commit_url: str) -> CommitAnalysisResult:
         CommitAnalysisResult with both file and function-level changes
     """
     # First get the basic file-level commit analysis
-    commit_result = analyze_github_commit(commit_url)
-    
-    # Extract owner, repo, commit SHA for content retrieval
-    owner, repo, commit_sha = parse_github_url(commit_url)
+    commit_result = analyze_github_commit_metadata(commit_url)
 
     # Track all modified functions across files
     all_modified_functions = []
@@ -56,46 +43,37 @@ def analyze_commit_with_functions(commit_url: str) -> CommitAnalysisResult:
         
         # Get file content before and after changes
         before_content, after_content = get_file_content_before_after(
-            owner, repo, commit_sha, modified_file.filename
+            commit_result.owner, commit_result.repo, commit_result.commit_sha, modified_file.filename
         )
         
-        # Skip if we couldn't get content
-        if modified_file.status != 'removed' and not after_content:
-            logger.warning(f"Couldn't retrieve content for: {modified_file.filename}")
-            continue
-        
-        if modified_file.status != 'added' and not before_content:
-            logger.warning(f"Couldn't retrieve original content for: {modified_file.filename}")
-            continue
+        # Skip if we couldn't get content - with improved logic based on file status
+        if modified_file.status == 'added':
+            if not after_content:
+                logger.warning(f"Couldn't retrieve content for added file: {modified_file.filename}")
+                continue
+        elif modified_file.status == 'removed':
+            if not before_content:
+                logger.warning(f"Couldn't retrieve original content for removed file: {modified_file.filename}")
+                continue
+        else:  # modified, renamed
+            if not after_content:
+                logger.warning(f"Couldn't retrieve new content for: {modified_file.filename}")
+                continue
+            if not before_content:
+                logger.warning(f"Couldn't retrieve original content for: {modified_file.filename}")
+                continue
         
         # Detect function changes
         try:
             # Handle special cases based on file status
-            if modified_file.status == 'added':
-                # New file - all functions are new
-                file_functions = create_modified_functions(
-                    None, after_content, 
-                    modified_file.language.lower(), 
-                    modified_file.filename,
-                    modified_file.patch
+            file_functions = create_modified_functions(
+                before_content, after_content, 
+                modified_file.language.lower(), 
+                modified_file.filename,
+                modified_file.patch,
+                modified_file.status,
                 )
-            elif modified_file.status == 'removed':
-                # Deleted file - all functions are deleted
-                file_functions = create_modified_functions(
-                    before_content, None, 
-                    modified_file.language.lower(), 
-                    modified_file.filename,
-                    modified_file.patch
-                )
-            else:
-                # Modified file - need to analyze changes
-                file_functions = create_modified_functions(
-                    before_content, after_content, 
-                    modified_file.language.lower(), 
-                    modified_file.filename,
-                    modified_file.patch
-                )
-                
+    
             # Add file functions to the overall list
             all_modified_functions.extend(file_functions)
             
@@ -108,7 +86,6 @@ def analyze_commit_with_functions(commit_url: str) -> CommitAnalysisResult:
     
     # Update the commit result with function changes
     commit_result.modified_functions = all_modified_functions
-    
     return commit_result
 
 
@@ -137,11 +114,8 @@ def should_analyze_file(modified_file: ModifiedFile) -> bool:
     if not modified_file.language:
         logger.debug(f"Skipping file with unknown language: {modified_file.filename}")
         return False
-        
-    # List of currently supported languages for function detection
-    supported_languages = ['python', 'javascript', 'typescript', 'java', 'c', 'cpp', 'go']
     
-    if modified_file.language.lower() not in supported_languages:
+    if modified_file.language.lower() not in SUPPORTED_LANGUAGES:
         logger.debug(f"Skipping file with unsupported language {modified_file.language}: {modified_file.filename}")
         return False
         
